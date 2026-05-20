@@ -24,40 +24,43 @@ const DEFAULT_PATTERN = {
   },
 };
 
-function seed() {
+async function seed() {
   console.log('🌱 Seeding database...');
 
-  // Check if already seeded
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (userCount.count > 0) {
-    console.log('Database already seeded. Skipping.');
-    return;
+  try {
+    // Check if already seeded
+    const { rows } = await db.query('SELECT COUNT(*) as count FROM users');
+    if (parseInt(rows[0].count) > 0) {
+      console.log('Database already seeded. Skipping.');
+      process.exit(0);
+    }
+
+    // Create default admin user
+    const adminHash = bcrypt.hashSync('admin123', 10);
+    await db.query(`
+      INSERT INTO users (username, password_hash, display_name, role)
+      VALUES ($1, $2, $3, $4)
+    `, ['admin', adminHash, 'Administrator', 'admin']);
+    console.log('✅ Admin user created (admin / admin123)');
+
+    // Create default employees
+    await db.query(`INSERT INTO employees (name, slot_position) VALUES ($1, $2)`, ['Abdul Mutolib', 1]);
+    await db.query(`INSERT INTO employees (name, slot_position) VALUES ($1, $2)`, ['Eka Bayu M', 2]);
+    await db.query(`INSERT INTO employees (name, slot_position) VALUES ($1, $2)`, ['M. Rafli Ramadhani', 3]);
+    console.log('✅ 3 default employees created');
+
+    // Insert default pattern config
+    await db.query(`
+      INSERT INTO pattern_config (id, config_json) VALUES (1, $1)
+    `, [JSON.stringify(DEFAULT_PATTERN)]);
+    console.log('✅ Default pattern config created');
+
+    console.log('🎉 Seeding complete!');
+  } catch (err) {
+    console.error('Error during seeding:', err);
+  } finally {
+    process.exit(0);
   }
-
-  // Create default admin user
-  const adminHash = bcrypt.hashSync('admin123', 10);
-  db.prepare(`
-    INSERT INTO users (username, password_hash, display_name, role)
-    VALUES (?, ?, ?, ?)
-  `).run('admin', adminHash, 'Administrator', 'admin');
-  console.log('✅ Admin user created (admin / admin123)');
-
-  // Create default employees
-  const insertEmployee = db.prepare(`
-    INSERT INTO employees (name, slot_position) VALUES (?, ?)
-  `);
-  insertEmployee.run('Abdul Mutolib', 1);
-  insertEmployee.run('Eka Bayu M', 2);
-  insertEmployee.run('M. Rafli Ramadhani', 3);
-  console.log('✅ 3 default employees created');
-
-  // Insert default pattern config
-  db.prepare(`
-    INSERT INTO pattern_config (id, config_json) VALUES (1, ?)
-  `).run(JSON.stringify(DEFAULT_PATTERN));
-  console.log('✅ Default pattern config created');
-
-  console.log('🎉 Seeding complete!');
 }
 
 seed();

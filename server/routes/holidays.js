@@ -9,17 +9,22 @@ router.get('/', authMiddleware, async (req, res) => {
   const { year, month } = req.query;
   if (!year) return res.status(400).json({ error: 'Parameter year wajib diisi' });
 
-  // Check cache first
-  const cached = month
-    ? db.prepare('SELECT * FROM holidays WHERE year = ? AND month = ?').all(parseInt(year), parseInt(month))
-    : db.prepare('SELECT * FROM holidays WHERE year = ?').all(parseInt(year));
-
-  if (cached.length > 0) {
-    return res.json(cached);
-  }
-
-  // Fetch from API
   try {
+    // Check cache first
+    let cachedRows = [];
+    if (month) {
+      const { rows } = await db.query('SELECT * FROM holidays WHERE year = $1 AND month = $2', [parseInt(year), parseInt(month)]);
+      cachedRows = rows;
+    } else {
+      const { rows } = await db.query('SELECT * FROM holidays WHERE year = $1', [parseInt(year)]);
+      cachedRows = rows;
+    }
+
+    if (cachedRows.length > 0) {
+      return res.json(cachedRows);
+    }
+
+    // Fetch from API
     let url = `https://libur.deno.dev/api?year=${year}`;
     if (month) url += `&month=${month}`;
 
@@ -28,25 +33,27 @@ router.get('/', authMiddleware, async (req, res) => {
 
     const data = await response.json();
 
-    // Cache results
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO holidays (date, name, is_national_holiday, year, month)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const insertMany = db.transaction((items) => {
-      for (const item of items) {
-        const d = new Date(item.date);
-        insert.run(item.date, item.name, item.is_national_holiday ? 1 : 0, d.getFullYear(), d.getMonth() + 1);
-      }
-    });
-    insertMany(data);
+    // Cache results (use ON CONFLICT DO NOTHING for PostgreSQL)
+    for (const item of data) {
+      const d = new Date(item.date);
+      await db.query(`
+        INSERT INTO holidays (date, name, is_national_holiday, year, month)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (date) DO NOTHING
+      `, [item.date, item.name, item.is_national_holiday ? true : false, d.getFullYear(), d.getMonth() + 1]);
+    }
 
     // Return from cache (normalized format)
-    const result = month
-      ? db.prepare('SELECT * FROM holidays WHERE year = ? AND month = ?').all(parseInt(year), parseInt(month))
-      : db.prepare('SELECT * FROM holidays WHERE year = ?').all(parseInt(year));
+    let resultRows = [];
+    if (month) {
+      const { rows } = await db.query('SELECT * FROM holidays WHERE year = $1 AND month = $2', [parseInt(year), parseInt(month)]);
+      resultRows = rows;
+    } else {
+      const { rows } = await db.query('SELECT * FROM holidays WHERE year = $1', [parseInt(year)]);
+      resultRows = rows;
+    }
 
-    res.json(result);
+    res.json(resultRows);
   } catch (err) {
     console.error('Holiday API error:', err.message);
     res.status(502).json({ error: 'Gagal mengambil data hari libur', details: err.message });
