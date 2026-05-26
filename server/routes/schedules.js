@@ -171,8 +171,8 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
              todayScheduleMap[employee.id] = overrideType;
           } else {
              const yestType = yesterdayScheduleMap[employee.id] || '';
-             // Rule: if A1 or A2 yesterday, cannot be OC or BT today
-             if (yestType === 'A1' || yestType === 'A2') {
+             // Rule: if A1, A2, OC, or BT yesterday, cannot be OC or BT today (no consecutive days of extra shifts)
+             if (['A1', 'A2', 'OC', 'BT'].includes(yestType)) {
                todayScheduleMap[employee.id] = '';
              } else {
                eligibleEmployees.push(employee);
