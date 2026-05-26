@@ -89,11 +89,26 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
 
     let yesterdayScheduleMap = {};
     let prevLastDate = null;
+    let lastHolidaySchedule = null;
+    const prevMonthDays = {};
+
     if (prevSchedulesRows.length > 0) {
       prevLastDate = prevSchedulesRows[0].date;
       for (const row of prevSchedulesRows) {
         if (row.date === prevLastDate) {
           yesterdayScheduleMap[row.employee_id] = row.schedule_type;
+        }
+        if (!prevMonthDays[row.date]) prevMonthDays[row.date] = {};
+        prevMonthDays[row.date][row.employee_id] = row.schedule_type;
+      }
+
+      // Find the last holiday's schedule to carry over the OC rotation
+      const sortedDates = Object.keys(prevMonthDays).sort((a, b) => b.localeCompare(a));
+      for (const d of sortedDates) {
+        const map = prevMonthDays[d];
+        if (Object.values(map).includes('OC') || Object.values(map).includes('BT')) {
+          lastHolidaySchedule = map;
+          break;
         }
       }
     }
@@ -110,8 +125,13 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
       }
     }
 
-    // OC rotation counter for non-workdays
+    // OC rotation state
     let ocRotationIndex = 0;
+    let lastOC_empId = null;
+    if (lastHolidaySchedule) {
+      const foundId = Object.keys(lastHolidaySchedule).find(id => lastHolidaySchedule[id] === 'OC');
+      if (foundId) lastOC_empId = parseInt(foundId);
+    }
 
     // Generate days of the month
     const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
@@ -164,13 +184,22 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
 
         if (eligibleEmployees.length === 1) {
            todayScheduleMap[eligibleEmployees[0].id] = 'OC';
+           lastOC_empId = eligibleEmployees[0].id;
         } else if (eligibleEmployees.length >= 2) {
-           const ocIdx = ocRotationIndex % eligibleEmployees.length;
+           let ocIdx = ocRotationIndex % eligibleEmployees.length;
+           
+           // Ensure the same person doesn't get OC twice in a row on holidays
+           if (eligibleEmployees[ocIdx].id === lastOC_empId) {
+             ocRotationIndex++;
+             ocIdx = ocRotationIndex % eligibleEmployees.length;
+           }
+
            const btIdx = (ocIdx + 1) % eligibleEmployees.length;
            
            for (let i = 0; i < eligibleEmployees.length; i++) {
              if (i === ocIdx) {
                todayScheduleMap[eligibleEmployees[i].id] = 'OC';
+               lastOC_empId = eligibleEmployees[i].id;
              } else if (i === btIdx) {
                todayScheduleMap[eligibleEmployees[i].id] = 'BT';
              } else {
