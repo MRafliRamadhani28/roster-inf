@@ -329,4 +329,21 @@ router.delete('/month', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
+// DELETE /api/schedules/reset?year=&month= - Clear ALL schedules for a month
+router.delete('/reset', authMiddleware, adminOnly, async (req, res) => {
+  const { year, month } = req.query;
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+
+  try {
+    await db.query(
+      'DELETE FROM schedules WHERE date >= $1 AND date <= $2',
+      [startDate, endDate]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

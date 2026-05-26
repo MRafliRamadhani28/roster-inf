@@ -82,6 +82,7 @@ class App {
         <div class="toolbar-actions">
           ${this.user.role === 'admin' ? `
             <button class="btn btn-primary" id="btn-generate">🔄 Generate</button>
+            <button class="btn btn-danger" id="btn-reset" style="background-color: #ef4444; color: white;">🗑️ Reset</button>
             <button class="btn btn-outline" id="btn-employees">👥 Karyawan</button>
             <button class="btn btn-outline" id="btn-patterns">⚙️ Pola</button>
           ` : ''}

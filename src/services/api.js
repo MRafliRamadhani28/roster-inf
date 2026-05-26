@@ -153,6 +153,12 @@ class ApiService {
     });
   }
 
+  resetSchedules(year, month) {
+    return this.request(`/schedules/reset?year=${year}&month=${month}`, {
+      method: 'DELETE',
+    });
+  }
+
   updateScheduleCell(employeeId, date, scheduleType) {
     return this.request(`/schedules/cell/${employeeId}/${date}`, {
       method: 'PUT',

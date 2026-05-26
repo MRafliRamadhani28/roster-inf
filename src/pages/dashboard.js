@@ -384,7 +384,6 @@ export class Dashboard {
         const confirmStr = `Auto-generate jadwal untuk ${MONTH_NAMES[this.month-1]} ${this.year}?\nIni akan menimpa jadwal otomatis sebelumnya (override manual tetap dipertahankan).`;
         if (confirm(confirmStr)) {
           btnGenerate.disabled = true;
-          btnGenerate.textContent = 'Generating...';
           try {
             await api.generateSchedules(this.year, this.month);
             window.showToast('Jadwal berhasil di-generate!');
@@ -393,7 +392,25 @@ export class Dashboard {
             window.showToast(err.message, 'error');
           } finally {
             btnGenerate.disabled = false;
-            btnGenerate.textContent = '🔄 Generate Jadwal';
+          }
+        }
+      });
+    }
+
+    const btnReset = document.getElementById('btn-reset');
+    if (btnReset) {
+      btnReset.addEventListener('click', async () => {
+        const confirmStr = `HAPUS SEMUA jadwal (termasuk jadwal manual) untuk ${MONTH_NAMES[this.month-1]} ${this.year}?\nTindakan ini tidak dapat dibatalkan.`;
+        if (confirm(confirmStr)) {
+          btnReset.disabled = true;
+          try {
+            await api.resetSchedules(this.year, this.month);
+            window.showToast('Jadwal bulan ini berhasil di-reset!');
+            await this.loadData();
+          } catch (err) {
+            window.showToast(err.message, 'error');
+          } finally {
+            btnReset.disabled = false;
           }
         }
       });
