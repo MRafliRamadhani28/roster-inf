@@ -62,23 +62,47 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
     const holidayMap = {};
     holidays.forEach(h => { holidayMap[h.date] = h; });
 
+    // Fetch ALL manual overrides for the month to avoid querying in loop
+    const startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDateStr = `${year}-${String(month).padStart(2, '0')}-31`;
+    const { rows: manualOverridesRows } = await db.query(
+      'SELECT employee_id, date, schedule_type FROM schedules WHERE date >= $1 AND date <= $2 AND is_manual_override = TRUE',
+      [startDateStr, endDateStr]
+    );
+    const manualOverridesMap = {};
+    for (const row of manualOverridesRows) {
+      manualOverridesMap[`${row.employee_id}_${row.date}`] = row.schedule_type;
+    }
+
     // Get last workday counter from previous month to maintain continuity
     const prevMonth = month == 1 ? 12 : parseInt(month) - 1;
     const prevYear = month == 1 ? parseInt(year) - 1 : parseInt(year);
+    
+    // Fetch last day's schedules of the previous month for ALL employees
     const { rows: prevSchedulesRows } = await db.query(`
-      SELECT s.date, s.schedule_type, e.slot_position
+      SELECT s.date, s.schedule_type, e.id as employee_id, e.slot_position
       FROM schedules s
       JOIN employees e ON s.employee_id = e.id
-      WHERE s.date LIKE $1 AND e.slot_position = 1 AND e.is_active = TRUE
+      WHERE s.date LIKE $1 AND e.is_active = TRUE
       ORDER BY s.date DESC
-      LIMIT 1
     `, [`${prevYear}-${String(prevMonth).padStart(2, '0')}-%`]);
-    const prevSchedules = prevSchedulesRows[0];
 
-    // Determine starting cycle index
+    let yesterdayScheduleMap = {};
+    let prevLastDate = null;
+    if (prevSchedulesRows.length > 0) {
+      prevLastDate = prevSchedulesRows[0].date;
+      for (const row of prevSchedulesRows) {
+        if (row.date === prevLastDate) {
+          yesterdayScheduleMap[row.employee_id] = row.schedule_type;
+        }
+      }
+    }
+
+    // Determine starting cycle index from slot 1
     let workdayCycleIndex = 0;
-    if (prevSchedules) {
-      const lastType = prevSchedules.schedule_type;
+    const slot1Employee = employees.find(e => e.slot_position === 1);
+    if (slot1Employee && yesterdayScheduleMap[slot1Employee.id]) {
+      const lastType = yesterdayScheduleMap[slot1Employee.id];
       const slot1Cycle = pattern.workdayPattern.slots.find(s => s.position === 1)?.cycle || ['A1', 'A'];
       const lastIdx = slot1Cycle.indexOf(lastType);
       if (lastIdx !== -1) {
@@ -100,69 +124,75 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
       const isHoliday = !!holidayMap[dateStr];
       const isWorkday = !isWeekend && !isHoliday;
 
+      let todayScheduleMap = {};
+
+      if (isWorkday) {
+        for (const employee of employees) {
+          const overrideType = manualOverridesMap[`${employee.id}_${dateStr}`];
+          if (overrideType !== undefined) {
+             todayScheduleMap[employee.id] = overrideType;
+          } else {
+             const slotConfig = pattern.workdayPattern.slots.find(s => s.position === employee.slot_position);
+             if (slotConfig) {
+               const cycleIdx = workdayCycleIndex % pattern.workdayPattern.cycleLength;
+               todayScheduleMap[employee.id] = slotConfig.cycle[cycleIdx] || 'A';
+             } else {
+               todayScheduleMap[employee.id] = 'A';
+             }
+          }
+        }
+        workdayCycleIndex++;
+      } else {
+        // Non-workday
+        const eligibleEmployees = [];
+        for (const employee of employees) {
+          const overrideType = manualOverridesMap[`${employee.id}_${dateStr}`];
+          if (overrideType !== undefined) {
+             todayScheduleMap[employee.id] = overrideType;
+          } else {
+             const yestType = yesterdayScheduleMap[employee.id] || '';
+             // Rule: if A1 or A2 yesterday, cannot be OC or BT today
+             if (yestType === 'A1' || yestType === 'A2') {
+               todayScheduleMap[employee.id] = '';
+             } else {
+               eligibleEmployees.push(employee);
+             }
+          }
+        }
+
+        eligibleEmployees.sort((a, b) => a.slot_position - b.slot_position);
+
+        if (eligibleEmployees.length === 1) {
+           todayScheduleMap[eligibleEmployees[0].id] = 'OC';
+        } else if (eligibleEmployees.length >= 2) {
+           const ocIdx = ocRotationIndex % eligibleEmployees.length;
+           const btIdx = (ocIdx + 1) % eligibleEmployees.length;
+           
+           for (let i = 0; i < eligibleEmployees.length; i++) {
+             if (i === ocIdx) {
+               todayScheduleMap[eligibleEmployees[i].id] = 'OC';
+             } else if (i === btIdx) {
+               todayScheduleMap[eligibleEmployees[i].id] = 'BT';
+             } else {
+               todayScheduleMap[eligibleEmployees[i].id] = '';
+             }
+           }
+           ocRotationIndex++;
+        }
+      }
+
+      // Record entries for DB
       for (const employee of employees) {
-        // Check if there's a manual override
-        const { rows: existingRows } = await db.query(
-          'SELECT * FROM schedules WHERE employee_id = $1 AND date = $2 AND is_manual_override = TRUE',
-          [employee.id, dateStr]
-        );
-        const existing = existingRows[0];
-
-        if (existing) {
-          // Keep manual override
-          entries.push({
-            employee_id: employee.id,
-            date: dateStr,
-            schedule_type: existing.schedule_type,
-            is_manual_override: true,
-          });
-          continue;
-        }
-
-        let scheduleType = '';
-
-        if (isWorkday) {
-          // Find slot config for this employee
-          const slotConfig = pattern.workdayPattern.slots.find(s => s.position === employee.slot_position);
-          if (slotConfig) {
-            const cycleIdx = workdayCycleIndex % pattern.workdayPattern.cycleLength;
-            scheduleType = slotConfig.cycle[cycleIdx] || 'A';
-          } else {
-            scheduleType = 'A';
-          }
-        } else {
-          // Non-workday: assign OC and BT
-          const ocSlots = pattern.nonWorkdayPattern.ocSlots || [1, 2];
-          const btSlot = pattern.nonWorkdayPattern.btSlot || 3;
-
-          if (employee.slot_position === btSlot) {
-            scheduleType = 'BT';
-          } else if (ocSlots.includes(employee.slot_position)) {
-            // Determine which OC slot is active this non-workday
-            const ocIdx = ocRotationIndex % ocSlots.length;
-            if (employee.slot_position === ocSlots[ocIdx]) {
-              scheduleType = 'OC';
-            } else {
-              scheduleType = '';
-            }
-          } else {
-            scheduleType = '';
-          }
-        }
-
+        const overrideType = manualOverridesMap[`${employee.id}_${dateStr}`];
         entries.push({
           employee_id: employee.id,
           date: dateStr,
-          schedule_type: scheduleType,
-          is_manual_override: false,
+          schedule_type: todayScheduleMap[employee.id],
+          is_manual_override: overrideType !== undefined,
         });
       }
 
-      if (isWorkday) {
-        workdayCycleIndex++;
-      } else {
-        ocRotationIndex++;
-      }
+      yesterdayScheduleMap = { ...todayScheduleMap };
     }
 
     // Upsert all entries using a transaction
