@@ -147,20 +147,67 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
       let todayScheduleMap = {};
 
       if (isWorkday) {
+        let defaultAssignments = {};
+        let eligibleForExtra = [];
+        let nonEligibleForExtra = [];
+
         for (const employee of employees) {
           const overrideType = manualOverridesMap[`${employee.id}_${dateStr}`];
           if (overrideType !== undefined) {
              todayScheduleMap[employee.id] = overrideType;
           } else {
              const slotConfig = pattern.workdayPattern.slots.find(s => s.position === employee.slot_position);
+             let proposedType = 'A';
              if (slotConfig) {
                const cycleIdx = workdayCycleIndex % pattern.workdayPattern.cycleLength;
-               todayScheduleMap[employee.id] = slotConfig.cycle[cycleIdx] || 'A';
+               proposedType = slotConfig.cycle[cycleIdx] || 'A';
+             }
+             defaultAssignments[employee.id] = proposedType;
+             
+             const yestType = yesterdayScheduleMap[employee.id] || '';
+             if (['A1', 'A2', 'OC', 'BT'].includes(yestType)) {
+               nonEligibleForExtra.push(employee.id);
              } else {
-               todayScheduleMap[employee.id] = 'A';
+               eligibleForExtra.push(employee.id);
              }
           }
         }
+
+        // Adjust assignments to prevent consecutive extra shifts
+        for (const empId of nonEligibleForExtra) {
+           const proposed = defaultAssignments[empId];
+           if (proposed !== 'A' && proposed !== '') {
+             // Employee assigned an extra shift (A1/A2) but is NOT eligible (worked extra yesterday)
+             let swapped = false;
+             for (const eligibleId of eligibleForExtra) {
+                if (defaultAssignments[eligibleId] === 'A') {
+                   const eligibleEmp = employees.find(e => e.id === eligibleId);
+                   const slotConfig = pattern.workdayPattern.slots.find(s => s.position === eligibleEmp.slot_position);
+                   if (slotConfig && slotConfig.cycle.includes(proposed)) {
+                       // Swap successful
+                       defaultAssignments[eligibleId] = proposed;
+                       defaultAssignments[empId] = 'A';
+                       // Remove from eligible so they don't get swapped again
+                       eligibleForExtra = eligibleForExtra.filter(id => id !== eligibleId);
+                       swapped = true;
+                       break;
+                   }
+                }
+             }
+             if (!swapped) {
+                // Drop the extra shift if no one else can take it
+                defaultAssignments[empId] = 'A';
+             }
+           }
+        }
+
+        // Apply final assignments
+        for (const employee of employees) {
+          if (todayScheduleMap[employee.id] === undefined) {
+             todayScheduleMap[employee.id] = defaultAssignments[employee.id];
+          }
+        }
+        
         workdayCycleIndex++;
       } else {
         // Non-workday
