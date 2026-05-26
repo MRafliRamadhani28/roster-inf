@@ -147,10 +147,9 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
       let todayScheduleMap = {};
 
       if (isWorkday) {
-        let defaultAssignments = {};
-        let eligibleForExtra = [];
-        let nonEligibleForExtra = [];
+        const defaultAssignments = {};
 
+        // Step 1: Compute proposed assignments from cycle pattern
         for (const employee of employees) {
           const overrideType = manualOverridesMap[`${employee.id}_${dateStr}`];
           if (overrideType !== undefined) {
@@ -163,45 +162,48 @@ router.post('/generate', authMiddleware, adminOnly, async (req, res) => {
                proposedType = slotConfig.cycle[cycleIdx] || 'A';
              }
              defaultAssignments[employee.id] = proposedType;
-             
-             const yestType = yesterdayScheduleMap[employee.id] || '';
-             if (['A1', 'A2', 'OC', 'BT'].includes(yestType)) {
-               nonEligibleForExtra.push(employee.id);
-             } else {
-               eligibleForExtra.push(employee.id);
-             }
           }
         }
 
-        // Adjust assignments to prevent consecutive extra shifts
-        for (const empId of nonEligibleForExtra) {
-           const proposed = defaultAssignments[empId];
-           if (proposed !== 'A' && proposed !== '') {
-             // Employee assigned an extra shift (A1/A2) but is NOT eligible (worked extra yesterday)
-             let swapped = false;
-             for (const eligibleId of eligibleForExtra) {
-                if (defaultAssignments[eligibleId] === 'A') {
-                   const eligibleEmp = employees.find(e => e.id === eligibleId);
-                   const slotConfig = pattern.workdayPattern.slots.find(s => s.position === eligibleEmp.slot_position);
-                   if (slotConfig && slotConfig.cycle.includes(proposed)) {
-                       // Swap successful
-                       defaultAssignments[eligibleId] = proposed;
-                       defaultAssignments[empId] = 'A';
-                       // Remove from eligible so they don't get swapped again
-                       eligibleForExtra = eligibleForExtra.filter(id => id !== eligibleId);
-                       swapped = true;
-                       break;
-                   }
-                }
-             }
-             if (!swapped) {
-                // Drop the extra shift if no one else can take it
-                defaultAssignments[empId] = 'A';
-             }
-           }
+        // Step 2: Detect employees whose proposed type is the same as yesterday
+        const needsSwap = []; // employees who have a conflict (same type as yesterday)
+        const canSwap = [];   // employees who do NOT have a conflict
+
+        for (const employee of employees) {
+          if (todayScheduleMap[employee.id] !== undefined) continue; // manual override, skip
+          const proposed = defaultAssignments[employee.id];
+          const yestType = yesterdayScheduleMap[employee.id] || '';
+          if (proposed === yestType && proposed !== '') {
+            needsSwap.push(employee);
+          } else {
+            canSwap.push(employee);
+          }
         }
 
-        // Apply final assignments
+        // Step 3: Try to swap each conflicting employee with a non-conflicting one
+        for (const emp of needsSwap) {
+          const myProposed = defaultAssignments[emp.id];
+          const myYest = yesterdayScheduleMap[emp.id] || '';
+
+          for (let i = 0; i < canSwap.length; i++) {
+            const other = canSwap[i];
+            const otherProposed = defaultAssignments[other.id];
+            const otherYest = yesterdayScheduleMap[other.id] || '';
+
+            // Swap is valid only if BOTH sides end up with a different type from their yesterday
+            const empGetsOther = otherProposed !== myYest;
+            const otherGetsMine = myProposed !== otherYest;
+
+            if (empGetsOther && otherGetsMine) {
+              defaultAssignments[emp.id] = otherProposed;
+              defaultAssignments[other.id] = myProposed;
+              canSwap.splice(i, 1); // used up, remove from pool
+              break;
+            }
+          }
+        }
+
+        // Step 4: Apply final assignments
         for (const employee of employees) {
           if (todayScheduleMap[employee.id] === undefined) {
              todayScheduleMap[employee.id] = defaultAssignments[employee.id];
