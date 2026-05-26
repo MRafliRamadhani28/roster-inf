@@ -45,9 +45,17 @@ export class Dashboard {
       <div class="roster-tables-wrapper" id="roster-container">
         <div style="text-align: center; padding: 2rem;">Memuat data roster...</div>
       </div>
-      <div class="notes-panel" id="notes-container" style="display: none;">
-        <div class="notes-title">📝 Note:</div>
-        <ul class="notes-list" id="notes-list"></ul>
+      <div class="notes-wrapper" style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+        <div class="notes-panel" id="notes-container" style="display: none; flex: 1; min-width: 300px;">
+          <div class="notes-title">📝 Note Jadwal:</div>
+          <ul class="notes-list" id="notes-list"></ul>
+        </div>
+        <div class="holiday-alert-panel" id="holiday-alert-container" style="display: flex; flex-direction: column; flex: 1; min-width: 300px; background-color: #fef2f2; border: 1px solid #f87171; border-radius: var(--radius-md, 8px); padding: 1rem; color: #991b1b; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <div class="notes-title" style="color: #b91c1c; font-weight: bold; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>⚠️</span> INFO LIBUR
+          </div>
+          <ul class="notes-list" id="holiday-notes-list" style="margin: 0; padding-left: 1.5rem; margin-bottom: 0.75rem;"></ul>
+        </div>
       </div>
     `;
     
@@ -120,8 +128,10 @@ export class Dashboard {
   renderNotes() {
     const notesContainer = document.getElementById('notes-container');
     const notesList = document.getElementById('notes-list');
+    const holidayList = document.getElementById('holiday-notes-list');
     
     let notesHtml = '';
+    let holidayHtml = '';
     
     // Hardcoded notes from pattern hours
     if (this.patternConfig) {
@@ -138,7 +148,7 @@ export class Dashboard {
       const sorted = [...this.holidays].sort((a, b) => new Date(a.date) - new Date(b.date));
       sorted.forEach(h => {
         const d = new Date(h.date);
-        notesHtml += `<li>Tgl ${d.getDate()} ${h.name}</li>`;
+        holidayHtml += `<li>Tgl ${d.getDate()} ${h.name}</li>`;
       });
     }
 
@@ -148,6 +158,8 @@ export class Dashboard {
     } else {
       notesContainer.style.display = 'none';
     }
+
+    holidayList.innerHTML = holidayHtml || '<li>Tidak ada hari libur/cuti bulan ini</li>';
   }
 
   renderRoster() {
