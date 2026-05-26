@@ -67,6 +67,32 @@ try {
     CREATE INDEX IF NOT EXISTS idx_holidays_year_month ON holidays(year, month);
   `);
   console.log('PostgreSQL Database tables created or verified.');
+
+  // Auto-migration: Update wording for A1 and A2 if they are still using the old format
+  try {
+    const { rows } = await pool.query('SELECT config_json FROM pattern_config WHERE id = 1');
+    if (rows.length > 0) {
+      let config = JSON.parse(rows[0].config_json);
+      let updated = false;
+      config.scheduleTypes.forEach(t => {
+        if (t.code === 'A1' && t.hours !== '08.00-17.00 + Stand By s/d 21.00') {
+          t.hours = '08.00-17.00 + Stand By s/d 21.00';
+          updated = true;
+        }
+        if (t.code === 'A2' && t.hours !== '08.00-17.00 + Stand By s/d 21.00') {
+          t.hours = '08.00-17.00 + Stand By s/d 21.00';
+          updated = true;
+        }
+      });
+      if (updated) {
+        await pool.query('UPDATE pattern_config SET config_json = $1 WHERE id = 1', [JSON.stringify(config)]);
+        console.log('Auto-updated schedule wording for A1 and A2 in database.');
+      }
+    }
+  } catch (migErr) {
+    console.error('Error during auto-migration:', migErr);
+  }
+
 } catch (error) {
   console.error('Error initializing PostgreSQL tables:', error);
 }
