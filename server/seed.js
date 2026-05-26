@@ -4,8 +4,8 @@ import bcrypt from 'bcryptjs';
 const DEFAULT_PATTERN = {
   scheduleTypes: [
     { code: 'A',  label: 'Reguler',       hours: '08.00-17.00',              color: '#3b82f6' },
-    { code: 'A1', label: 'Standby',        hours: '08.00-17.00 + s/d 21.00', color: '#1d4ed8' },
-    { code: 'A2', label: 'IT Support',     hours: '17.00-21.00',             color: '#7c3aed' },
+    { code: 'A1', label: 'Standby',        hours: '08.00-17.00 + Stand By s/d 21.00', color: '#1d4ed8' },
+    { code: 'A2', label: 'IT Support',     hours: '08.00-17.00 + Stand By s/d 21.00',             color: '#7c3aed' },
     { code: 'OC', label: 'On Call',        hours: '-',                       color: '#f59e0b' },
     { code: 'BT', label: 'Back Up Teknis', hours: '-',                       color: '#14b8a6' },
   ],
