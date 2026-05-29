@@ -432,7 +432,7 @@ export class Dashboard {
     if (btnPdf) {
       btnPdf.addEventListener('click', () => {
          import('../services/export.js').then(module => {
-            module.exportToPDF(this.year, this.month);
+            module.exportToPDF(this.year, this.month, this.schedules, this.employees, this.holidays, this.patternConfig);
          }).catch(err => {
             window.showToast('Gagal memuat modul export', 'error');
          });
