@@ -9,9 +9,8 @@ export class Dashboard {
     
     // State
     const now = new Date();
-    // Default to May 2026 as per user image for testing
-    this.year = 2026;
-    this.month = 5;
+    this.year = now.getFullYear();
+    this.month = now.getMonth() + 1;
     
     this.employees = [];
     this.schedules = [];
