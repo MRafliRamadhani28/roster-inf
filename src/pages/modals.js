@@ -137,6 +137,7 @@ export function showEmployeeManager(dash) {
       await api.request('/employees', { method: 'POST', body: JSON.stringify({ name }) });
       showToast('Karyawan berhasil ditambah');
       await refresh();
+      document.getElementById('new-emp-name').focus();
     } catch (err) {
       showToast(err.message, 'error');
     }

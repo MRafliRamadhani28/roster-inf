@@ -243,7 +243,10 @@ export class Dashboard {
     const seq = ++this.loadSeq;
     if (blank) {
       this.status = 'loading';
+      this.schedules = [];
+      this.holidays = [];
       this.renderRoster();
+      this.renderNotes();
     }
     try {
       const [empData, schedData, holData, patData] = await Promise.all([
@@ -312,16 +315,18 @@ export class Dashboard {
     const notes = this.scheduleTypes.filter(t => t.hours !== '-').map(t => `<li>Untuk Jadwal ${esc(t.code)}, ${esc(t.hours)}</li>`).join('');
     const sorted = [...this.holidays].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const holidays = sorted.map(h => `<li>Tgl ${parseInt(String(h.date).slice(8, 10), 10)} ${esc(h.name)}</li>`).join('');
+    const fresh = this.status === 'ok' || this.status === 'empty';
     el.innerHTML = `
       ${notes ? `
         <section class="note-card">
           <h2><i class="ph ph-note"></i>Note Jadwal</h2>
           <ul>${notes}</ul>
         </section>` : ''}
-      <section class="note-card note-holiday">
-        <h2><i class="ph-fill ph-flag"></i>INFO LIBUR</h2>
-        <ul>${holidays || '<li>Tidak ada hari libur/cuti bulan ini</li>'}</ul>
-      </section>`;
+      ${fresh ? `
+        <section class="note-card note-holiday">
+          <h2><i class="ph-fill ph-flag"></i>INFO LIBUR</h2>
+          <ul>${holidays || '<li>Tidak ada hari libur/cuti bulan ini</li>'}</ul>
+        </section>` : ''}`;
   }
 
   buildColumns() {
@@ -360,7 +365,12 @@ export class Dashboard {
       return;
     }
 
+    const focused = el.contains(document.activeElement) ? document.activeElement.closest('button.cell') : null;
     el.innerHTML = this.gridHtml();
+    if (focused) {
+      const again = el.querySelector(`button.cell[data-emp="${focused.dataset.emp}"][data-date="${focused.dataset.date}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }
     this.renderWeekJump();
     const scroller = document.getElementById('grid-scroller');
     if (this.isMobile && scroller) {
