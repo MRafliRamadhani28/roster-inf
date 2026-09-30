@@ -8,39 +8,29 @@ class ApiService {
 
   showLoading() {
     this.activeRequests++;
-    let loader = document.getElementById('global-loader');
-    if (!loader) {
-      loader = document.createElement('div');
-      loader.id = 'global-loader';
-      loader.innerHTML = `
-        <div class="loader-spinner"></div>
-        <div style="margin-top: 1rem; color: white; font-weight: 500; font-family: sans-serif;">Memproses...</div>
-      `;
-      Object.assign(loader.style, {
-        position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
-        backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', zIndex: '9999',
-        backdropFilter: 'blur(3px)'
-      });
-      const style = document.createElement('style');
-      style.innerHTML = `
-        .loader-spinner {
-          border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid white;
-          border-radius: 50%; width: 40px; height: 40px;
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-      `;
-      document.head.appendChild(style);
-      document.body.appendChild(loader);
-    }
-    loader.style.display = 'flex';
+    if (this.loaderTimer || this.loaderShown) return;
+    this.loaderTimer = setTimeout(() => {
+      this.loaderTimer = null;
+      let loader = document.getElementById('global-loader');
+      if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'global-loader';
+        loader.setAttribute('aria-live', 'polite');
+        loader.innerHTML = '<span class="spinner spinner-lg"></span><span class="loader-text">Memproses...</span>';
+        document.body.appendChild(loader);
+      }
+      loader.style.display = 'flex';
+      this.loaderShown = true;
+    }, 300);
   }
 
   hideLoading() {
     this.activeRequests--;
     if (this.activeRequests <= 0) {
       this.activeRequests = 0;
+      clearTimeout(this.loaderTimer);
+      this.loaderTimer = null;
+      this.loaderShown = false;
       const loader = document.getElementById('global-loader');
       if (loader) loader.style.display = 'none';
     }
@@ -87,7 +77,7 @@ class ApiService {
     try {
       const response = await fetch(url, config);
       
-      if (response.status === 401) {
+      if (response.status === 401 && this.token) {
         this.logout();
         throw new Error('Sesi telah berakhir, silakan login kembali.');
       }
